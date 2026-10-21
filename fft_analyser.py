@@ -1,7 +1,8 @@
 import serial
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.fft import rfft, rfftfreq
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # Configuration
 PORT = 'COM6'  # Matches your ESP32's upload port
@@ -25,10 +26,9 @@ ser.reset_input_buffer()
 for _ in range(10):
     ser.readline()
 
-3
+# Capture the exact number of samples needed
 while len(audio_data) < SAMPLES_PER_FRAME:
     try:
-        # Read a line, decode it, and strip the \r\n
         line = ser.readline().decode('utf-8').strip()
         if line:
             audio_data.append(int(line))
@@ -46,29 +46,53 @@ yf = rfft(y)
 xf = rfftfreq(SAMPLES_PER_FRAME, 1 / SAMPLE_RATE)
 magnitude = np.abs(yf)
 
-# Build the spectral analysis plots
-plt.figure(figsize=(12, 8))
+# Filter out 0 Hz for log plot to avoid math domain errors
+valid_idx = xf > 0
+xf_clean = xf[valid_idx]
+magnitude_clean = magnitude[valid_idx]
+
+# Build the interactive Plotly subplots
+fig = make_subplots(
+    rows=2, cols=1,
+    subplot_titles=("Time Domain (Raw Acoustic Amplitude)",
+                    "Frequency Domain (FFT Spectral Analysis - Log/Log Scale)"),
+    vertical_spacing=0.15
+)
 
 # Top Graph: The raw audio waveform
-plt.subplot(2, 1, 1)
-plt.plot(np.linspace(0, DURATION, SAMPLES_PER_FRAME), y, color='blue')
-plt.title('Time Domain (Raw Acoustic Amplitude)')
-plt.xlabel('Time (seconds)')
-plt.ylabel('Amplitude')
-plt.grid(True, alpha=0.3)
+time_x = np.linspace(0, DURATION, SAMPLES_PER_FRAME)
+fig.add_trace(
+    go.Scatter(x=time_x, y=y, mode='lines', line=dict(color='blue'), name="Amplitude"),
+    row=1, col=1
+)
+fig.update_xaxes(title_text="Time (seconds)", row=1, col=1)
+fig.update_yaxes(title_text="Amplitude", row=1, col=1)
 
 # Bottom Graph: The Frequency Spectrum (Log-Log)
-plt.subplot(2, 1, 2)
-plt.plot(xf, magnitude, color='red')  # Changed to loglog
-plt.title('Frequency Domain (FFT Spectral Analysis - Log/Log Scale)')
-plt.xlabel('Frequency (Hz)')
-plt.ylabel('Magnitude (Loudness)')
+fig.add_trace(
+    go.Scatter(x=xf_clean, y=magnitude_clean, mode='lines', line=dict(color='red'), name="Magnitude"),
+    row=2, col=1
+)
 
-# Start at 20Hz (log(0) is undefined) and go up to Nyquist limit (24kHz)
-plt.xlim(0.1, 20)
+fig.update_xaxes(
+    type="linear",
+    title_text="Frequency (Hz)",
+    range=[1, 1000],
+    row=2, col=1
+)
+fig.update_yaxes(
+    type="linear",
+    title_text="Magnitude (Loudness)",
+    row=2, col=1
+)
 
-# Enable gridlines for both major and minor log ticks
-plt.grid(True, which="both", ls="-", alpha=0.3)
+# Final layout adjustments
+fig.update_layout(
+    height=800,
+    title_text="Interactive Acoustic Analysis",
+    showlegend=False,
+    hovermode="x unified"
+)
 
-plt.tight_layout()
-plt.show()
+# Opens the interactive graph in your default web browser
+fig.show()
